@@ -84,12 +84,23 @@ export async function syncSellerAccount(row: SellerAccountRow): Promise<SellerAc
   return { ...row, ...next };
 }
 
-/** Creates a Stripe Express account and stores it. Never replaces an existing one. */
+/** Creates a Stripe connected account and stores it. Never replaces an existing one. */
 export async function createSellerAccount(email: string): Promise<SellerAccountRow> {
   const stripe = getStripe();
+  // The sandbox platform uses Stripe "Managed Risk": Stripe, not the platform,
+  // covers negative balances, so the legacy `type: "express"` is rejected.
+  // `controller` describes the same account without `type`. The full Stripe
+  // Dashboard is the option that works with Managed Risk today (the Express
+  // Dashboard needs a preview API version).
   const account = await stripe.accounts.create({
-    type: "express",
     email,
+    controller: {
+      losses: { payments: "stripe" },
+      fees: { payer: "account" },
+      stripe_dashboard: { type: "full" },
+      requirement_collection: "stripe",
+    },
+    // Stripe requires `transfers` whenever `card_payments` is requested.
     capabilities: {
       card_payments: { requested: true },
       transfers: { requested: true },
