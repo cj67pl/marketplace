@@ -1,49 +1,79 @@
 # Marketplace
 
-A Facebook Marketplace-inspired web app where anyone can browse listings, search, filter by category, post an item with a photo, and message a seller. No login required.
+A Facebook Marketplace-inspired web application where anyone can browse listings, search, filter by category, post an item with a photo, and message sellers without creating an account. The application also supports payments through **Stripe Connect**, allowing sellers to onboard, buyers to purchase listings, and sellers to receive payments.
 
 ## Features
 
-- **Create a listing** with photo, title, description, price, category and seller email. Saved to Supabase, photo stored in Supabase Storage.
-- **Browse** all listings in a responsive grid with category tabs.
-- **Keyword search** across titles and descriptions.
-- **Listing detail page** with photo, full details, seller email and related listings.
-- **Message Seller** stores the buyer's message in Supabase.
-- **Optional:** the seller receives an email when a message arrives (Supabase Edge Function + Resend).
+### Marketplace
+- **Create listings** with a photo, title, description, price, category, and seller email.
+- **Browse listings** in a responsive grid with category filters.
+- **Keyword search** across listing titles and descriptions.
+- **Listing detail pages** with product information, seller email, and related listings.
+- **Message sellers** with messages stored in Supabase.
+- **Optional email notifications** through a Supabase Edge Function and Resend.
 
-## Tech stack
+### Stripe Connect Payments
+- **Seller onboarding** through Stripe-hosted onboarding.
+- **Connected account management** with seller account information stored in Supabase.
+- **Seller verification status** synchronized with Stripe.
+- **Buy Now checkout** for eligible listings.
+- **Stripe Checkout** for secure test payments.
+- **10% marketplace application fee** deducted from successful transactions.
+- **Order records** stored in Supabase.
+- **Stripe webhook integration** to confirm payments and update order status.
+- **Automatic listing status updates** to Sold after successful payment.
 
-- Next.js 16 (App Router, Cache Components) and React 19
+## Tech Stack
+
+- Next.js 16 (App Router, Cache Components)
+- React 19
 - TypeScript
-- Tailwind CSS 4 and shadcn/ui (Base UI), Lucide icons
+- Tailwind CSS 4
+- shadcn/ui (Base UI)
+- Lucide icons
 - Supabase (Postgres, Storage, Edge Functions)
+- Stripe Connect
+- Stripe Checkout
+- Vercel
 
-## Project structure
+## Project Structure
 
-```
+```text
 src/
 ├── app/
-│   ├── layout.tsx              # header + sidebar shell
-│   ├── page.tsx                # home: all listings + category tabs
-│   ├── create/page.tsx         # create listing
-│   ├── item/[id]/page.tsx      # listing detail + message seller
-│   └── category/[slug]/page.tsx
+│   ├── layout.tsx
+│   ├── page.tsx
+│   ├── create/page.tsx
+│   ├── item/[id]/page.tsx
+│   ├── category/[slug]/page.tsx
+│   ├── seller/connect/
+│   └── api/
+│       └── stripe/
+│           ├── connect/
+│           ├── checkout/
+│           └── webhook/
 ├── components/
-│   ├── layout/                 # header, sidebar
-│   ├── marketplace/            # cards, grid, forms, search, etc.
-│   └── ui/                     # shadcn components
+│   ├── layout/
+│   ├── marketplace/
+│   └── ui/
 ├── lib/
-│   ├── supabase.ts             # Supabase client
-│   ├── listings-api.ts         # server-side reads
-│   ├── listings-mutations.ts   # browser-side writes (create, upload, message)
+│   ├── supabase.ts
+│   ├── supabase-admin.ts
+│   ├── listings-api.ts
+│   ├── listings-mutations.ts
 │   ├── categories.ts
-│   └── listing-utils.ts
-└── types/listing.ts
+│   ├── listing-utils.ts
+│   └── stripe/
+└── types/
+    ├── listing.ts
+    └── seller.ts
+
 supabase/
-└── functions/notify-seller/    # optional email notification function
+└── functions/
+    └── notify-seller/
 ```
 
-## Getting started
+## Getting Started
 
 ### 1. Install
 
@@ -53,134 +83,163 @@ cd marketplace
 npm install
 ```
 
-### 2. Environment variables
+### 2. Environment Variables
 
-Create `.env.local` in the project root (it is git-ignored, so never commit it):
+Create a `.env.local` file in the project root. This file is git-ignored and must never be committed.
 
-```
-NEXT_PUBLIC_SUPABASE_URL=https://YOUR-PROJECT.supabase.co
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-public-key
-```
+Configure the following variables using the actual names expected by your application:
 
-Find both values in Supabase under **Project Settings → API**. The exact variable names the app expects are in `src/lib/supabase.ts`; use those if they differ from above.
+```env
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 
-### 3. Database
+SUPABASE_SERVICE_ROLE_KEY=
 
-In the Supabase **SQL Editor**, run the schema below. It creates the `listings` and `messages` tables, the `listing-images` storage bucket, indexes and row-level-security policies.
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
 
-<details>
-<summary>Schema SQL</summary>
-
-```sql
-CREATE TABLE listings (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  title VARCHAR(255) NOT NULL,
-  description TEXT,
-  price DECIMAL(10,2) NOT NULL,
-  category VARCHAR(100) NOT NULL,
-  seller_email VARCHAR(255) NOT NULL,
-  image_url TEXT,
-  location VARCHAR(255) DEFAULT 'Palo Alto, CA',
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE TABLE messages (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  listing_id UUID REFERENCES listings(id) ON DELETE CASCADE,
-  buyer_email VARCHAR(255) NOT NULL,
-  seller_email VARCHAR(255) NOT NULL,
-  message TEXT NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-INSERT INTO storage.buckets (id, name, public) VALUES ('listing-images', 'listing-images', true);
-
-CREATE POLICY "Anyone can upload listing images" ON storage.objects
-  FOR INSERT WITH CHECK (bucket_id = 'listing-images');
-CREATE POLICY "Anyone can view listing images" ON storage.objects
-  FOR SELECT USING (bucket_id = 'listing-images');
-
-CREATE INDEX idx_listings_category ON listings(category);
-CREATE INDEX idx_listings_created_at ON listings(created_at DESC);
-CREATE INDEX idx_messages_listing_id ON messages(listing_id);
-
-ALTER TABLE listings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Anyone can view listings" ON listings FOR SELECT USING (true);
-CREATE POLICY "Anyone can create listings" ON listings FOR INSERT WITH CHECK (true);
-CREATE POLICY "Anyone can create messages" ON messages FOR INSERT WITH CHECK (true);
+NEXT_PUBLIC_SITE_URL=
 ```
 
-</details>
+- **Supabase URL and publishable key:** Available in your Supabase project settings.
+- **Supabase service role key:** Used by server-side administrative operations. Never expose this key in client-side code.
+- **Stripe secret key:** The provided Stripe test-mode secret key.
+- **Stripe webhook secret:** The signing secret for the configured webhook endpoint.
+- **Site URL:** The deployed application URL or local development URL.
 
-Recommended hardening (the app only ever inserts messages, so nothing breaks):
+Check your source code for the exact environment variable names. Never commit actual API keys, service role keys, or webhook secrets.
 
-```sql
--- Do not allow the public key to read buyers' and sellers' messages.
-DROP POLICY IF EXISTS "Anyone can view messages" ON messages;
+### 3. Database Setup
 
--- Only accept the app's categories.
-ALTER TABLE listings ADD CONSTRAINT listings_category_check
-  CHECK (category IN ('Electronics','Furniture','Clothing','Home & Garden',
-                      'Sports & Outdoors','Vehicles','Other'));
-```
+In the Supabase SQL Editor, run the database schema and migrations included in the project.
 
-Also set a file size limit (for example 5 MB) and allowed types (`image/jpeg`, `image/png`, `image/webp`) on the `listing-images` bucket in **Storage → Policies/Settings**.
+The database supports:
 
-### 4. Run
+- Listings and listing images.
+- Buyer and seller messages.
+- Seller Stripe connected accounts.
+- Orders and payment status.
+- Listing availability and sold status.
+
+Configure Supabase Storage for the `listing-images` bucket and apply the required Row Level Security policies.
+
+Ensure that the database includes all tables and columns required by the current application before deploying.
+
+### 4. Run Locally
 
 ```bash
-npm run dev      # http://localhost:3000
+npm run dev
 ```
 
-Other scripts:
+Open http://localhost:3000.
+
+Other available scripts:
 
 ```bash
 npm run lint
-npm run build    # production build
-npm start        # run the production build
+npm run build
+npm start
 ```
+
+## Stripe Connect Setup
+
+The application uses Stripe Connect to support seller onboarding and marketplace payments.
+
+### Seller Onboarding
+
+1. Open a listing created by a seller.
+2. Start the seller connection process.
+3. Enter the seller's email address.
+4. Complete the Stripe-hosted onboarding flow.
+5. The connected Stripe account ID and onboarding status are saved in Supabase.
+
+Sellers must complete the required onboarding steps and have the necessary payment capabilities enabled before their listings can accept payments.
+
+### Buyer Checkout
+
+1. Open an available listing.
+2. Click **Buy Now**.
+3. Complete the Stripe Checkout payment using a test card.
+4. After successful payment, the order is confirmed through the Stripe webhook.
+5. The listing is automatically marked as Sold.
+
+### Marketplace Application Fee
+
+The marketplace charges a **10% application fee** on successful transactions.
+
+The remaining payment amount is allocated to the connected seller account according to the Stripe Connect payment configuration.
+
+### Stripe Test Payments
+
+Use Stripe test mode when testing checkout.
+
+| Field | Test Value |
+|---|---|
+| Card number | `4242 4242 4242 4242` |
+| Expiration | Any future date |
+| CVC | Any three digits |
+| ZIP / Postal code | Any valid test value |
+
+Use the provided Stripe sandbox credentials for the assignment.
+
+## Stripe Webhooks
+
+The application uses a Stripe webhook endpoint:
+
+```text
+/api/stripe/webhook
+```
+
+The webhook handles the following events:
+
+- `checkout.session.completed`
+- `account.updated`
+
+These events are used to synchronize seller account status, confirm completed payments, update orders, and mark purchased listings as Sold.
+
+The webhook signing secret must be configured through the `STRIPE_WEBHOOK_SECRET` environment variable.
+
+For production deployment, register the webhook using the deployed application URL and the appropriate Stripe Connect event configuration.
 
 ## Deploy to Vercel
 
-1. **Push to GitHub.** Confirm `.env.local` is listed in `.gitignore` first.
-   ```bash
-   git add .
-   git commit -m "Marketplace app"
-   git branch -M main
-   git remote add origin https://github.com/YOUR-USER/YOUR-REPO.git
-   git push -u origin main
-   ```
-2. In [Vercel](https://vercel.com), click **Add New → Project** and import the repository. Vercel detects Next.js automatically.
-3. Under **Environment Variables**, add the same two variables from your `.env.local`. Without them the build fails.
-4. Click **Deploy**.
-5. Check the live site:
-   - Create a listing with a photo and see it on the home page
-   - Filter it by category and search for it
-   - Open its detail page
-   - Send a message and confirm the row appears in the `messages` table
+1. Push the project to GitHub.
+2. Import the repository into Vercel, or use the existing Vercel project if one is already connected.
+3. Configure all required environment variables in **Settings → Environment Variables**.
+4. Set `NEXT_PUBLIC_SITE_URL` to the deployed application URL.
+5. Deploy the application.
+6. Configure the Stripe webhook endpoint using the deployed URL:
 
-## Optional: email the seller on new messages
+```text
+https://YOUR-VERCEL-DOMAIN/api/stripe/webhook
+```
 
-A Supabase Database Webhook on `messages` inserts calls the `notify-seller` Edge Function, which emails the seller through [Resend](https://resend.com). The seller can reply directly to the buyer.
+7. Add the corresponding webhook signing secret to Vercel.
+8. Redeploy if environment variables were changed.
+
+Ensure that the deployed application uses the provided Stripe test-mode credentials for the assignment.
+
+## Optional: Email Seller Notifications
+
+A Supabase Database Webhook on the `messages` table can invoke the `notify-seller` Edge Function to send email notifications through Resend.
 
 1. Create a Resend account and API key.
-2. In Supabase, create an Edge Function named `notify-seller` and paste in `supabase/functions/notify-seller/index.ts`.
-3. Add the secrets `RESEND_API_KEY`, `FROM_EMAIL` and (optional) `SITE_URL` under **Edge Functions → Secrets**.
-4. Under **Database → Webhooks**, create a hook on table `messages`, event **Insert**, type **Supabase Edge Functions**, function `notify-seller`.
+2. Deploy the `notify-seller` Supabase Edge Function.
+3. Configure `RESEND_API_KEY`, `FROM_EMAIL`, and optionally `SITE_URL` as function secrets.
+4. Configure a database webhook for new message insertions.
 
-Until you verify a domain in Resend, test emails can only be delivered to the address you signed up with.
+Email notifications are optional and separate from Stripe payment processing.
 
-## Known limitations
+## Known Limitations
 
-- One photo per listing (the schema has a single `image_url` column).
-- Every new listing gets the default location from the schema, because the form has no location field.
-- No accounts, so listings can't be edited or deleted by their owners.
-- Anyone can create listings and messages. Add rate limiting or a CAPTCHA before heavy public use.
-- Seller emails are shown publicly on listing pages, by design.
-- Messages are stored and optionally emailed, but there is no in-app inbox.
+- One photo per listing.
+- Listings use the default location unless a location is supplied.
+- No traditional user authentication system is required for browsing and listing creation.
+- Seller identification is based on the seller email associated with a listing.
+- Seller emails are displayed publicly on listing pages.
+- Messages are stored in Supabase, but there is no in-app inbox.
+- Stripe onboarding and payment processing use test-mode credentials for the assignment.
+- Listings can only be purchased when they are available and the seller has completed the required Stripe onboarding.
 
 ## License
 
@@ -200,8 +259,4 @@ copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
