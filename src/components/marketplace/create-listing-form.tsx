@@ -244,6 +244,15 @@ export function CreateListingForm() {
 						View your listing
 					</Link>
 					<Link
+						href="/seller/connect"
+						className={cn(
+							buttonVariants({ variant: "outline" }),
+							"h-10 px-4",
+						)}
+					>
+						Connect Stripe to get paid
+					</Link>
+					<Link
 						href="/"
 						className={cn(
 							buttonVariants({ variant: "outline" }),
